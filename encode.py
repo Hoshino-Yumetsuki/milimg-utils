@@ -132,7 +132,7 @@ if __name__ == "__main__":
         "-q",
         "--quality",
         type=int,
-        default=28,
+        default=0,
         help="AV1 encoding quality (CRF value, 0-63). lower value means higher quality and larger file. recommended range: 18-40. default: 28.",
     )
 

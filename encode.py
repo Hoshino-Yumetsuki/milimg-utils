@@ -17,14 +17,15 @@ def has_transparency(img: Image.Image) -> bool:
     return False
 
 
-def encode_to_av1(image: Image.Image, quality: int, is_alpha: bool = False) -> bytes:
+def encode_to_av1(image: Image.Image, quality: int, is_alpha: bool = False, lossless: bool = True) -> bytes:
     """
     Encode Pillow image to raw AV1 bitstream using PyAV.
 
     Args:
         image: Pillow image object.
-        quality: AV1 encoding CRF quality value (0-63, lower is higher quality).
+        quality: AV1 encoding CRF quality value (0-63, lower is higher quality). Ignored if lossless=True.
         is_alpha: If True, encode as grayscale; otherwise encode as color.
+        lossless: If True, use lossless encoding mode.
 
     Returns:
         Encoded raw AV1 bitstream (bytes).
@@ -47,7 +48,10 @@ def encode_to_av1(image: Image.Image, quality: int, is_alpha: bool = False) -> b
             stream.options["color_range"] = "pc"
 
         # --- Apply user-defined quality parameter ---
-        stream.options["crf"] = str(quality)
+        if lossless:
+            stream.options["lossless"] = "1"
+        else:
+            stream.options["crf"] = str(quality)
 
         # Convert Pillow image to AV Frame
         frame = av.VideoFrame.from_image(image)
@@ -66,7 +70,7 @@ def encode_to_av1(image: Image.Image, quality: int, is_alpha: bool = False) -> b
     return ivf_data[44:]
 
 
-def encode_milimg(input_path: str, output_path: str, quality: int):
+def encode_milimg(input_path: str, output_path: str, quality: int, lossless: bool = False):
     """
     Main function: load image, encode, and assemble into .milimg file.
     """
@@ -83,16 +87,22 @@ def encode_milimg(input_path: str, output_path: str, quality: int):
     )
 
     # Encode color channel
-    print(f"encoding color channel (YUV420) with quality (CRF)={quality}...")
+    if lossless:
+        print(f"encoding color channel (YUV420) with lossless mode...")
+    else:
+        print(f"encoding color channel (YUV420) with quality (CRF)={quality}...")
     rgb_image = img.convert("RGB")
-    color_payload = encode_to_av1(rgb_image, quality, is_alpha=False)
+    color_payload = encode_to_av1(rgb_image, quality, is_alpha=False, lossless=lossless)
     print(f"color data encoding complete, size: {len(color_payload)} bytes.")
 
     alpha_payload = None
     if version == 1:
-        print(f"encoding alpha channel (Grayscale) with quality (CRF)={quality}...")
+        if lossless:
+            print(f"encoding alpha channel (Grayscale) with lossless mode...")
+        else:
+            print(f"encoding alpha channel (Grayscale) with quality (CRF)={quality}...")
         alpha_image = img.getchannel("A")
-        alpha_payload = encode_to_av1(alpha_image, quality, is_alpha=True)
+        alpha_payload = encode_to_av1(alpha_image, quality, is_alpha=True, lossless=lossless)
         print(f"alpha data encoding complete, size: {len(alpha_payload)} bytes.")
 
     # Assemble .milimg file
@@ -135,6 +145,12 @@ if __name__ == "__main__":
         default=0,
         help="AV1 encoding quality (CRF value, 0-63). lower value means higher quality and larger file. recommended range: 18-40. default: 28.",
     )
+    parser.add_argument(
+        "-l",
+        "--lossless",
+        action="store_true",
+        help="use AV1 lossless encoding mode. when enabled, quality parameter is ignored.",
+    )
 
     args = parser.parse_args()
 
@@ -151,7 +167,7 @@ if __name__ == "__main__":
         print("error: quality value must be between 0 and 63.")
     else:
         try:
-            encode_milimg(args.input, args.output, args.quality)
+            encode_milimg(args.input, args.output, args.quality, args.lossless)
         except FileNotFoundError:
             print(f"error: input file '{args.input}' not found.")
         except Exception as e:
